@@ -3,12 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Form Responses Table</title>
+    <title>Form Responses JSON to CSV</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 20px;
-            overflow-x: auto;
+            max-width: 1200px;
+            margin: 0 auto;
         }
         table {
             width: 100%;
@@ -29,58 +31,79 @@
             position: sticky;
             top: 0;
         }
-        #fileInput {
+        .controls {
+            display: flex;
+            gap: 10px;
             margin-bottom: 20px;
         }
-        #loadingMessage {
-            display: none;
-            color: #666;
+        #fileInput, #exportButton {
+            padding: 10px;
+        }
+        #loadingMessage, #errorMessage {
+            margin-bottom: 10px;
         }
         #errorMessage {
-            display: none;
             color: red;
+        }
+        #loadingMessage {
+            color: #666;
         }
     </style>
 </head>
 <body>
-    <input type="file" id="fileInput" accept=".json">
-    <div id="loadingMessage">Loading... Please wait</div>
-    <div id="errorMessage">Error loading file</div>
+    <div class="controls">
+        <input type="file" id="fileInput" accept=".json">
+        <button id="exportButton" disabled>Export to CSV</button>
+    </div>
+    
+    <div id="loadingMessage"></div>
+    <div id="errorMessage"></div>
+    
     <table id="dataTable">
         <thead id="tableHeader"></thead>
         <tbody id="tableBody"></tbody>
     </table>
 
     <script>
-        // Function to escape HTML to prevent XSS
-        function escapeHTML(str) {
-            if (typeof str !== 'string') return str;
-            return str.replace(/[&<>'"]/g, 
-                tag => ({
-                    '&': '&amp;',
-                    '<': '&lt;',
-                    '>': '&gt;',
-                    "'": '&#39;',
-                    '"': '&quot;'
-                }[tag] || tag));
+        // Elements
+        const fileInput = document.getElementById('fileInput');
+        const exportButton = document.getElementById('exportButton');
+        const loadingMessage = document.getElementById('loadingMessage');
+        const errorMessage = document.getElementById('errorMessage');
+        const tableHeader = document.getElementById('tableHeader');
+        const tableBody = document.getElementById('tableBody');
+
+        // State
+        let currentData = null;
+
+        // Utility function to extract link text
+        function extractLinkText(htmlString) {
+            if (!htmlString) return '';
+            
+            // If it's already a plain text or URL
+            if (!htmlString.includes('<a')) return htmlString;
+            
+            // Extract text between <a> tags
+            const match = htmlString.match(/>([^<]+)</);
+            return match ? match[1] : htmlString;
         }
 
-        // Function to render table
+        // Render table
         function renderTable(data) {
-            const tableHeader = document.getElementById('tableHeader');
-            const tableBody = document.getElementById('tableBody');
-            
             // Clear previous content
             tableHeader.innerHTML = '';
             tableBody.innerHTML = '';
 
-            // If no data, exit
-            if (!data || data.length === 0) return;
+            // If no data, show error
+            if (!data || data.length === 0) {
+                errorMessage.textContent = 'No data found';
+                return;
+            }
 
-            // Get all possible headers from the first object
+            // Get headers
             const headers = Object.keys(data[0]);
 
-            // Create table header
+            // Create header row
             const headerRow = document.createElement('tr');
             headers.forEach(header => {
                 const th = document.createElement('th');
@@ -89,43 +112,46 @@
             });
             tableHeader.appendChild(headerRow);
 
-            // Create table body
+            // Create data rows
             data.forEach(item => {
                 const row = document.createElement('tr');
                 headers.forEach(header => {
                     const td = document.createElement('td');
+                    
                     // Special handling for resume link
                     if (header === 'Upload Your Latest Resume') {
                         const value = item[header];
                         if (value && value.includes('href')) {
-                            // If the value already contains an HTML anchor tag, use it directly
-                            td.innerHTML = value;
+                            // Extract link text if it's an HTML anchor
+                            const linkMatch = value.match(/<a\s+[^>]*>([^<]+)<\/a>/);
+                            td.innerHTML = linkMatch 
+                                ? `<a href="${value}" target="_blank">${linkMatch[1]}</a>` 
+                                : (value ? `<a href="${value}" target="_blank">${value}</a>` : 'N/A');
                         } else {
-                            // Create a clickable link if it's a plain URL
-                            td.innerHTML = value ? `<a href="${escapeHTML(value)}" target="_blank">${escapeHTML(value)}</a>` : 'N/A';
+                            td.innerHTML = value ? `<a href="${value}" target="_blank">${value}</a>` : 'N/A';
                         }
                     } else {
-                        td.innerHTML = escapeHTML(item[header] || 'N/A');
+                        td.textContent = item[header] || 'N/A';
                     }
+                    
                     row.appendChild(td);
                 });
                 tableBody.appendChild(row);
             });
+
+            // Enable export button
+            exportButton.disabled = false;
         }
 
-        // Event listener for file input
-        document.getElementById('fileInput').addEventListener('change', async (event) => {
-            const fileInput = event.target;
-            const loadingMessage = document.getElementById('loadingMessage');
-            const errorMessage = document.getElementById('errorMessage');
-
+        // File input change event
+        fileInput.addEventListener('change', async (event) => {
             // Reset messages
-            loadingMessage.style.display = 'block';
-            errorMessage.style.display = 'none';
+            loadingMessage.textContent = 'Loading...';
+            errorMessage.textContent = '';
+            exportButton.disabled = true;
 
             try {
-                // Read the file
-                const file = fileInput.files[0];
+                const file = event.target.files[0];
                 const reader = new FileReader();
 
                 reader.onload = function(e) {
@@ -133,50 +159,65 @@
                         // Parse JSON
                         const jsonData = JSON.parse(e.target.result);
                         
+                        // Store data
+                        currentData = jsonData;
+                        
                         // Render table
                         renderTable(jsonData);
                         
-                        // Hide loading message
-                        loadingMessage.style.display = 'none';
+                        // Clear loading message
+                        loadingMessage.textContent = '';
                     } catch (parseError) {
-                        console.error('JSON Parse Error:', parseError);
-                        errorMessage.textContent = 'Error parsing JSON file';
-                        errorMessage.style.display = 'block';
-                        loadingMessage.style.display = 'none';
+                        errorMessage.textContent = 'Error parsing JSON file: ' + parseError.message;
                     }
                 };
 
                 reader.onerror = function() {
-                    console.error('File Read Error');
                     errorMessage.textContent = 'Error reading file';
-                    errorMessage.style.display = 'block';
-                    loadingMessage.style.display = 'none';
                 };
 
                 reader.readAsText(file);
             } catch (error) {
-                console.error('Error:', error);
-                errorMessage.textContent = 'An unexpected error occurred';
-                errorMessage.style.display = 'block';
-                loadingMessage.style.display = 'none';
+                errorMessage.textContent = 'An unexpected error occurred: ' + error.message;
             }
         });
 
-        // Optional: If you want to load the file directly from the same directory (not recommended for security reasons)
-        async function loadJSONFromSameDirectory() {
-            try {
-                const response = await fetch('form_response.json');
-                const jsonData = await response.json();
-                renderTable(jsonData);
-            } catch (error) {
-                console.error('Error loading JSON:', error);
-                document.getElementById('errorMessage').textContent = 'Error loading JSON file';
-                document.getElementById('errorMessage').style.display = 'block';
+        // Export to CSV event
+        exportButton.addEventListener('click', () => {
+            if (!currentData) {
+                errorMessage.textContent = 'No data to export';
+                return;
             }
-        }
 
-        // Uncomment the following line if you want to automatically load the JSON from the same directory
-        // loadJSONFromSameDirectory();
+            // Prepare data for CSV export
+            const csvData = currentData.map(item => {
+                // Create a copy of the item to avoid modifying original data
+                const processedItem = {...item};
+                
+                // Special handling for resume link
+                if (processedItem['Upload Your Latest Resume']) {
+                    processedItem['Upload Your Latest Resume'] = extractLinkText(processedItem['Upload Your Latest Resume']);
+                }
+
+                return processedItem;
+            });
+
+            // Convert to CSV
+            const csv = Papa.unparse(csvData);
+
+            // Create and download CSV file
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'form_responses.csv');
+            link.style.visibility = 'hidden';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
     </script>
 </body>
 </html>
