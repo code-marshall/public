@@ -94,7 +94,19 @@
                 const row = document.createElement('tr');
                 headers.forEach(header => {
                     const td = document.createElement('td');
-                    td.innerHTML = escapeHTML(item[header] || 'N/A');
+                    // Special handling for resume link
+                    if (header === 'Upload Your Latest Resume') {
+                        const value = item[header];
+                        if (value && value.includes('href')) {
+                            // If the value already contains an HTML anchor tag, use it directly
+                            td.innerHTML = value;
+                        } else {
+                            // Create a clickable link if it's a plain URL
+                            td.innerHTML = value ? `<a href="${escapeHTML(value)}" target="_blank">${escapeHTML(value)}</a>` : 'N/A';
+                        }
+                    } else {
+                        td.innerHTML = escapeHTML(item[header] || 'N/A');
+                    }
                     row.appendChild(td);
                 });
                 tableBody.appendChild(row);
