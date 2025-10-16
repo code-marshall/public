@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Form Responses Table</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+            word-wrap: break-word;
+            max-width: 300px;
+        }
+        th {
+            background-color: #f2f2f2;
+            position: sticky;
+            top: 0;
+        }
+        #fileInput {
+            margin-bottom: 20px;
+        }
+        #loadingMessage {
+            display: none;
+            color: #666;
+        }
+        #errorMessage {
+            display: none;
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <input type="file" id="fileInput" accept=".json">
+    <div id="loadingMessage">Loading... Please wait</div>
+    <div id="errorMessage">Error loading file</div>
+    <table id="dataTable">
+        <thead id="tableHeader"></thead>
+        <tbody id="tableBody"></tbody>
+    </table>
+
+    <script>
+        // Function to escape HTML to prevent XSS
+        function escapeHTML(str) {
+            if (typeof str !== 'string') return str;
+            return str.replace(/[&<>'"]/g, 
+                tag => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    "'": '&#39;',
+                    '"': '&quot;'
+                }[tag] || tag));
+        }
+
+        // Function to render table
+        function renderTable(data) {
+            const tableHeader = document.getElementById('tableHeader');
+            const tableBody = document.getElementById('tableBody');
+            
+            // Clear previous content
+            tableHeader.innerHTML = '';
+            tableBody.innerHTML = '';
+
+            // If no data, exit
+            if (!data || data.length === 0) return;
+
+            // Get all possible headers from the first object
+            const headers = Object.keys(data[0]);
+
+            // Create table header
+            const headerRow = document.createElement('tr');
+            headers.forEach(header => {
+                const th = document.createElement('th');
+                th.textContent = header;
+                headerRow.appendChild(th);
+            });
+            tableHeader.appendChild(headerRow);
+
+            // Create table body
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                headers.forEach(header => {
+                    const td = document.createElement('td');
+                    td.innerHTML = escapeHTML(item[header] || 'N/A');
+                    row.appendChild(td);
+                });
+                tableBody.appendChild(row);
+            });
+        }
+
+        // Event listener for file input
+        document.getElementById('fileInput').addEventListener('change', async (event) => {
+            const fileInput = event.target;
+            const loadingMessage = document.getElementById('loadingMessage');
+            const errorMessage = document.getElementById('errorMessage');
+
+            // Reset messages
+            loadingMessage.style.display = 'block';
+            errorMessage.style.display = 'none';
+
+            try {
+                // Read the file
+                const file = fileInput.files[0];
+                const reader = new FileReader();
+
+                reader.onload = function(e) {
+                    try {
+                        // Parse JSON
+                        const jsonData = JSON.parse(e.target.result);
+                        
+                        // Render table
+                        renderTable(jsonData);
+                        
+                        // Hide loading message
+                        loadingMessage.style.display = 'none';
+                    } catch (parseError) {
+                        console.error('JSON Parse Error:', parseError);
+                        errorMessage.textContent = 'Error parsing JSON file';
+                        errorMessage.style.display = 'block';
+                        loadingMessage.style.display = 'none';
+                    }
+                };
+
+                reader.onerror = function() {
+                    console.error('File Read Error');
+                    errorMessage.textContent = 'Error reading file';
+                    errorMessage.style.display = 'block';
+                    loadingMessage.style.display = 'none';
+                };
+
+                reader.readAsText(file);
+            } catch (error) {
+                console.error('Error:', error);
+                errorMessage.textContent = 'An unexpected error occurred';
+                errorMessage.style.display = 'block';
+                loadingMessage.style.display = 'none';
+            }
+        });
+
+        // Optional: If you want to load the file directly from the same directory (not recommended for security reasons)
+        async function loadJSONFromSameDirectory() {
+            try {
+                const response = await fetch('form_response.json');
+                const jsonData = await response.json();
+                renderTable(jsonData);
+            } catch (error) {
+                console.error('Error loading JSON:', error);
+                document.getElementById('errorMessage').textContent = 'Error loading JSON file';
+                document.getElementById('errorMessage').style.display = 'block';
+            }
+        }
+
+        // Uncomment the following line if you want to automatically load the JSON from the same directory
+        // loadJSONFromSameDirectory();
+    </script>
+</body>
+</html>
